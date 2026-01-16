@@ -44,7 +44,6 @@ A C# application that parses HTTP access log files and generates reports on:
 ## Building
 
 ```bash
-cd LogParser
 dotnet build
 ```
 
@@ -87,12 +86,6 @@ Top 3 Most Active IP Addresses:
 ## Running Tests
 
 ```bash
-dotnet test
-```
-
-Or from the test project directory:
-```bash
-cd LogParser.Tests
 dotnet test
 ```
 
