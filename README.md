@@ -39,7 +39,7 @@ dotnet run -- <path-to-log-file>
 
 Example:
 ```bash
-dotnet run -- sample.log
+dotnet run -- programming-task-example-data.log
 ```
 
 ## Sample Output
@@ -70,7 +70,7 @@ Top 3 Most Active IP Addresses:
 
 ```bash
 cd LogParser.Tests
-dotnet test
+dotnet run -- programming-task-example-data.log
 ```
 
 ## Supported Log Format

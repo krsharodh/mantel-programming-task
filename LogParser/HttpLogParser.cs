@@ -1,7 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -27,29 +24,48 @@ namespace LogParser
         /// <summary>
         /// Parses a log file and generates a report
         /// </summary>
-        public string ParseAndGenerateReport(string filePath)
+        public string ParseAndGenerateReport(string filePath, int topN = 3)
         {
-            var entries = ParseLogFile(filePath);
-            return GenerateReport(entries);
+            var report = ParseLogFileStreaming(filePath, topN);
+            return FormatReport(report);
         }
 
         /// <summary>
-        /// Parses all entries from a log file
+        /// Parses a log file using streaming and aggregates data on-the-fly
         /// </summary>
-        public List<LogEntry> ParseLogFile(string filePath)
+        public LogReport ParseLogFileStreaming(string filePath, int topN = 3)
         {
-            var entries = new List<LogEntry>();
+            var ipCounts = new Dictionary<string, int>();
+            var urlCounts = new Dictionary<string, int>();
 
             foreach (var line in File.ReadLines(filePath))
             {
                 var entry = ParseLogLine(line);
-                if (entry != null)
-                {
-                    entries.Add(entry);
-                }
+                if (entry == null) continue;
+
+                // Aggregate IP counts on-the-fly
+                ipCounts[entry.IpAddress] = ipCounts.GetValueOrDefault(entry.IpAddress) + 1;
+
+                // Aggregate URL counts on-the-fly
+                urlCounts[entry.Url] = urlCounts.GetValueOrDefault(entry.Url) + 1;
             }
 
-            return entries;
+            return new LogReport
+            {
+                UniqueIpCount = ipCounts.Count,
+                TopUrls = urlCounts
+                    .OrderByDescending(x => x.Value)
+                    .ThenBy(x => x.Key)
+                    .Take(topN)
+                    .Select(x => (x.Key, x.Value))
+                    .ToList(),
+                TopIpAddresses = ipCounts
+                    .OrderByDescending(x => x.Value)
+                    .ThenBy(x => x.Key)
+                    .Take(topN)
+                    .Select(x => (x.Key, x.Value))
+                    .ToList()
+            };
         }
 
         /// <summary>
@@ -64,24 +80,28 @@ namespace LogParser
             if (!match.Success)
                 return null;
 
-            int.TryParse(match.Groups["size"].Value, out int size);
-
             var entry = new LogEntry
             {
                 IpAddress = match.Groups["ip"].Value,
                 HttpMethod = match.Groups["method"].Value,
                 Url = match.Groups["url"].Value,
-                StatusCode = int.TryParse(match.Groups["status"].Value, out int status) ? status : -1,
-                ResponseSize = size
+                Timestamp = DateTime.TryParseExact(
+                    match.Groups["timestamp"].Value,
+                    "dd/MMM/yyyy:HH:mm:ss zzz",
+                    CultureInfo.InvariantCulture,
+                    DateTimeStyles.None,
+                    out DateTime dateTime) ? dateTime : DateTime.MinValue,
+                StatusCode = int.TryParse(match.Groups["status"].Value, out int status) ? status : 0,
+                ResponseSize = int.TryParse(match.Groups["size"].Value, out int size) ? size : 0
             };
 
             return entry;
         }
 
         /// <summary>
-        /// Generates a report from parsed log entries
+        /// Formats a LogReport into a readable string
         /// </summary>
-        public string GenerateReport(List<LogEntry> entries)
+        public string FormatReport(LogReport report)
         {
             var sb = new StringBuilder();
             sb.AppendLine("=".PadRight(50, '='));
@@ -90,16 +110,14 @@ namespace LogParser
             sb.AppendLine();
 
             // 1. Number of unique IP addresses
-            var uniqueIpCount = GetUniqueIpAddressCount(entries);
-            sb.AppendLine($"Number of Unique IP Addresses: {uniqueIpCount}");
+            sb.AppendLine($"Number of Unique IP Addresses: {report.UniqueIpCount}");
             sb.AppendLine();
 
             // 2. Top 3 most visited URLs
             sb.AppendLine("Top 3 Most Visited URLs:");
             sb.AppendLine("-".PadRight(30, '-'));
-            var topUrls = GetTopVisitedUrls(entries, 3);
             int rank = 1;
-            foreach (var (url, count) in topUrls)
+            foreach (var (url, count) in report.TopUrls)
             {
                 sb.AppendLine($"  {rank}. {url} ({count} visits)");
                 rank++;
@@ -109,9 +127,8 @@ namespace LogParser
             // 3. Top 3 most active IP addresses
             sb.AppendLine("Top 3 Most Active IP Addresses:");
             sb.AppendLine("-".PadRight(30, '-'));
-            var topIps = GetTopActiveIpAddresses(entries, 3);
             rank = 1;
-            foreach (var (ip, count) in topIps)
+            foreach (var (ip, count) in report.TopIpAddresses)
             {
                 sb.AppendLine($"  {rank}. {ip} ({count} requests)");
                 rank++;
@@ -120,42 +137,6 @@ namespace LogParser
             sb.AppendLine("=".PadRight(50, '='));
 
             return sb.ToString();
-        }
-
-        /// <summary>
-        /// Gets the count of unique IP addresses
-        /// </summary>
-        public int GetUniqueIpAddressCount(List<LogEntry> entries)
-        {
-            return entries.Select(e => e.IpAddress).Distinct().Count();
-        }
-
-        /// <summary>
-        /// Gets the top N most visited URLs
-        /// </summary>
-        public List<(string Url, int Count)> GetTopVisitedUrls(List<LogEntry> entries, int topN)
-        {
-            return entries
-                .GroupBy(e => e.Url)
-                .Select(g => (Url: g.Key, Count: g.Count()))
-                .OrderByDescending(x => x.Count)
-                .ThenBy(x => x.Url)
-                .Take(topN)
-                .ToList();
-        }
-
-        /// <summary>
-        /// Gets the top N most active IP addresses
-        /// </summary>
-        public List<(string IpAddress, int Count)> GetTopActiveIpAddresses(List<LogEntry> entries, int topN)
-        {
-            return entries
-                .GroupBy(e => e.IpAddress)
-                .Select(g => (IpAddress: g.Key, Count: g.Count()))
-                .OrderByDescending(x => x.Count)
-                .ThenBy(x => x.IpAddress)
-                .Take(topN)
-                .ToList();
         }
     }
 }
